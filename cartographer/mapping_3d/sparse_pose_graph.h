@@ -120,7 +120,8 @@ class SparsePoseGraph : public mapping::SparsePoseGraph {
   // Handles a new work item.
   void AddWorkItem(std::function<void()> work_item) REQUIRES(mutex_);
 
-  int GetSubmapIndex(const mapping::Submap* submap) const REQUIRES(mutex_) {
+  mapping::PerTrajectoryIndex GetSubmapIndex(
+      const mapping::Submap* submap) const REQUIRES(mutex_) {
     const auto iterator = submap_indices_.find(submap);
     CHECK(iterator != submap_indices_.end());
     return iterator->second;
@@ -138,7 +139,8 @@ class SparsePoseGraph : public mapping::SparsePoseGraph {
       const kalman_filter::PoseCovariance& covariance) REQUIRES(mutex_);
 
   // Computes constraints for a scan and submap pair.
-  void ComputeConstraint(const int scan_index, const int submap_index)
+  void ComputeConstraint(const int scan_index,
+                         const mapping::PerTrajectoryIndex& submap_index)
       REQUIRES(mutex_);
 
   // Adds constraints for older scans whenever a new submap is finished.
@@ -158,8 +160,11 @@ class SparsePoseGraph : public mapping::SparsePoseGraph {
 
   // Adds extrapolated transforms, so that there are transforms for all submaps.
   std::vector<transform::Rigid3d> ExtrapolateSubmapTransforms(
-      const std::vector<transform::Rigid3d>& submap_transforms,
+      const std::map<int, std::vector<transform::Rigid3d>>& submap_transforms,
       const mapping::Submaps& submaps) const REQUIRES(mutex_);
+
+  // NOCOM(#hrapp): what
+  int GetTrajectoryId(const mapping::Submaps* submaps) REQUIRES(mutex_);
 
   const mapping::proto::SparsePoseGraphOptions options_;
   common::Mutex mutex_;
@@ -177,6 +182,12 @@ class SparsePoseGraph : public mapping::SparsePoseGraph {
                      std::unique_ptr<common::FixedRatioSampler>>
       global_localization_samplers_ GUARDED_BY(mutex_);
 
+  // NOCOM(#hrapp): what
+  std::unordered_map<const mapping::Submaps*, int>
+      trajectory_to_ids_ GUARDED_BY(mutex_);
+  std::unordered_map<int, int>
+      num_submaps_ GUARDED_BY(mutex_);
+
   // Number of scans added since last loop closure.
   int num_scans_since_last_loop_closure_ GUARDED_BY(mutex_) = 0;
 
@@ -187,12 +198,15 @@ class SparsePoseGraph : public mapping::SparsePoseGraph {
   sparse_pose_graph::OptimizationProblem optimization_problem_;
   sparse_pose_graph::ConstraintBuilder constraint_builder_ GUARDED_BY(mutex_);
   std::vector<Constraint> constraints_;
-  std::vector<transform::Rigid3d> submap_transforms_;  // (map <- submap)
+  std::map<int, std::vector<transform::Rigid3d>>
+      submap_transforms_;  // (map <- submap)
 
   // Submaps get assigned an index and state as soon as they are seen, even
   // before they take part in the background computations.
-  std::map<const mapping::Submap*, int> submap_indices_ GUARDED_BY(mutex_);
-  std::vector<SubmapState> submap_states_ GUARDED_BY(mutex_);
+  std::map<const mapping::Submap*, mapping::PerTrajectoryIndex> submap_indices_
+      GUARDED_BY(mutex_);
+  std::map<mapping::PerTrajectoryIndex, SubmapState> submap_states_
+      GUARDED_BY(mutex_);
 
   // Connectivity structure of our trajectories.
   std::vector<std::vector<const mapping::Submaps*>> connected_components_;
@@ -207,7 +221,7 @@ class SparsePoseGraph : public mapping::SparsePoseGraph {
   std::vector<mapping::TrajectoryNode> trajectory_nodes_ GUARDED_BY(mutex_);
 
   // Current submap transforms used for displaying data.
-  std::vector<transform::Rigid3d> optimized_submap_transforms_
+  std::map<int, std::vector<transform::Rigid3d>> optimized_submap_transforms_
       GUARDED_BY(mutex_);
 };
 

@@ -108,8 +108,8 @@ void OptimizationProblem::Solve(
 
   // Add cost functions for intra- and inter-submap constraints.
   for (const Constraint& constraint : constraints) {
-    CHECK_GE(constraint.i, 0);
-    CHECK_LT(constraint.i, submap_transforms->size());
+    CHECK_GE(constraint.i_old, 0);
+    CHECK_LT(constraint.i_old, submap_transforms->size());
     CHECK_GE(constraint.j, 0);
     CHECK_LT(constraint.j, node_data_.size());
     problem.AddResidualBlock(
@@ -119,7 +119,7 @@ void OptimizationProblem::Solve(
         constraint.tag == Constraint::INTER_SUBMAP
             ? new ceres::HuberLoss(options_.huber_scale())
             : nullptr,
-        C_submaps[constraint.i].data(), C_point_clouds[constraint.j].data());
+        C_submaps[constraint.i_old].data(), C_point_clouds[constraint.j].data());
   }
 
   // Add penalties for changes between consecutive scans.

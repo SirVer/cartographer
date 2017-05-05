@@ -220,6 +220,8 @@ void SparsePoseGraph::ComputeConstraintsForScan(
     constexpr double kFakePositionCovariance = 1e-6;
     constexpr double kFakeOrientationCovariance = 1e-6;
     constraints_.push_back(Constraint{
+        // NOCOM(#hrapp): what
+        mapping::PerTrajectoryIndex{-1, -1},
         submap_index,
         scan_index,
         {transform::Embed3D(constraint_transform),

@@ -231,6 +231,8 @@ void ConstraintBuilder::ComputeConstraint(
   constexpr double kFakePositionCovariance = 1e-6;
   constexpr double kFakeOrientationCovariance = 1e-6;
   constraint->reset(new Constraint{
+    // NOCOM(#hrapp): what
+      mapping::PerTrajectoryIndex{-1,-1},
       submap_index,
       scan_index,
       {transform::Embed3D(constraint_transform),

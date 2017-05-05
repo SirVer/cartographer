@@ -52,6 +52,25 @@ void GroupTrajectoryNodes(
     std::vector<std::vector<TrajectoryNode>>* grouped_nodes,
     std::vector<std::pair<int, int>>* new_indices);
 
+// NOCOM(#hrapp): what
+struct PerTrajectoryIndex {
+  int trajectory_id;
+  int index;
+
+  // NOCOM(#hrapp): needed?
+  static PerTrajectoryIndex Invalid() { return PerTrajectoryIndex{-1, -1}; }
+
+  bool operator<(const PerTrajectoryIndex& other) const {
+    return std::forward_as_tuple(trajectory_id, index) <
+           std::forward_as_tuple(other.trajectory_id, other.index);
+  }
+};
+
+inline std::ostream& operator<<(std::ostream& os, const PerTrajectoryIndex& v) {
+  os << "(" << v.trajectory_id << ", " << v.index << ")";
+  return os;
+}
+
 class SparsePoseGraph {
  public:
   // A "constraint" as in the paper by Konolige, Kurt, et al. "Efficient sparse
@@ -64,7 +83,9 @@ class SparsePoseGraph {
     };
 
     // Submap index.
-    int i;
+    // NOCOM(#hrapp): what
+    PerTrajectoryIndex i;
+    int i_old;
 
     // Scan index.
     int j;

@@ -77,18 +77,19 @@ OptimizationProblem::OptimizationProblem(
 
 OptimizationProblem::~OptimizationProblem() {}
 
-void OptimizationProblem::AddImuData(const mapping::Submaps* const trajectory,
+void OptimizationProblem::AddImuData(const int trajectory_id,
                                      const common::Time time,
                                      const Eigen::Vector3d& linear_acceleration,
                                      const Eigen::Vector3d& angular_velocity) {
-  imu_data_[trajectory].push_back(
+  imu_data_[trajectory_id].push_back(
       ImuData{time, linear_acceleration, angular_velocity});
 }
 
 void OptimizationProblem::AddTrajectoryNode(
-    const mapping::Submaps* const trajectory, const common::Time time,
+    const int trajectory_id, const common::Time time,
     const transform::Rigid3d& point_cloud_pose) {
-  node_data_.push_back(NodeData{trajectory, time, point_cloud_pose});
+  node_data_.push_back(
+      NodeData{trajectory_id, time, point_cloud_pose});
 }
 
 void OptimizationProblem::SetMaxNumIterations(const int32 max_num_iterations) {
@@ -98,16 +99,17 @@ void OptimizationProblem::SetMaxNumIterations(const int32 max_num_iterations) {
 
 void OptimizationProblem::Solve(
     const std::vector<Constraint>& constraints,
-    std::vector<transform::Rigid3d>* const submap_transforms) {
+    std::map<int, std::vector<transform::Rigid3d>>* const
+        per_trajectory_submap_transforms) {
   if (node_data_.empty()) {
     // Nothing to optimize.
     return;
   }
 
   // Compute the indices of consecutive nodes for each trajectory.
-  std::map<const mapping::Submaps*, std::vector<size_t>> nodes_per_trajectory;
+  std::map<int, std::vector<size_t>> nodes_per_trajectory;
   for (size_t j = 0; j != node_data_.size(); ++j) {
-    nodes_per_trajectory[node_data_[j].trajectory].push_back(j);
+    nodes_per_trajectory[node_data_[j].trajectory_id].push_back(j);
   }
 
   ceres::Problem::Options problem_options;
@@ -124,32 +126,51 @@ void OptimizationProblem::Solve(
   // Set the starting point.
   std::deque<CeresPose> C_submaps;
   std::deque<CeresPose> C_point_clouds;
-  // Tie the first submap to the origin.
-  CHECK(!submap_transforms->empty());
-  C_submaps.emplace_back(
-      transform::Rigid3d::Identity(), translation_parameterization(),
-      common::make_unique<ceres::AutoDiffLocalParameterization<
-          ConstantYawQuaternionPlus, 4, 2>>(),
-      &problem);
-  problem.SetParameterBlockConstant(C_submaps.back().translation());
 
-  for (size_t i = 1; i != submap_transforms->size(); ++i) {
-    C_submaps.emplace_back(
-        (*submap_transforms)[i], translation_parameterization(),
-        common::make_unique<ceres::QuaternionParameterization>(), &problem);
+  std::map<mapping::PerTrajectoryIndex, size_t> submap_indices;
+
+  bool first_submap = true;
+
+  for (const auto& submap_transforms_pair : *per_trajectory_submap_transforms) {
+    const auto& submap_transforms = submap_transforms_pair.second;
+
+    for (size_t i = 0; i != submap_transforms.size(); ++i) {
+      mapping::PerTrajectoryIndex per_trajectory_index{
+          submap_transforms_pair.first, static_cast<int>(i)};
+      CHECK(submap_indices
+                .insert(std::make_pair(per_trajectory_index, C_submaps.size()))
+                .second);
+
+      if (first_submap) {
+        first_submap = false;
+        // Tie the first submap to the origin.
+        CHECK(!submap_transforms.empty());
+        C_submaps.emplace_back(
+            transform::Rigid3d::Identity(), translation_parameterization(),
+            common::make_unique<ceres::AutoDiffLocalParameterization<
+                ConstantYawQuaternionPlus, 4, 2>>(),
+            &problem);
+        problem.SetParameterBlockConstant(C_submaps.back().translation());
+        continue;
+      }
+
+      C_submaps.emplace_back(
+          submap_transforms[i], translation_parameterization(),
+          common::make_unique<ceres::QuaternionParameterization>(), &problem);
+    }
   }
-  for (size_t j = 0; j != node_data_.size(); ++j) {
+
+  for (const NodeData& node_data : node_data_) {
     C_point_clouds.emplace_back(
-        node_data_[j].point_cloud_pose, translation_parameterization(),
+        node_data.point_cloud_pose, translation_parameterization(),
         common::make_unique<ceres::QuaternionParameterization>(), &problem);
   }
 
   // Add cost functions for intra- and inter-submap constraints.
   for (const Constraint& constraint : constraints) {
-    CHECK_GE(constraint.i, 0);
-    CHECK_LT(constraint.i, submap_transforms->size());
     CHECK_GE(constraint.j, 0);
     CHECK_LT(constraint.j, node_data_.size());
+    const int flattened_i = submap_indices.at(constraint.i);
     problem.AddResidualBlock(
         new ceres::AutoDiffCostFunction<SpaCostFunction, 6, 4, 3, 4, 3>(
             new SpaCostFunction(constraint.pose)),
@@ -157,8 +178,8 @@ void OptimizationProblem::Solve(
         constraint.tag == Constraint::INTER_SUBMAP
             ? new ceres::HuberLoss(options_.huber_scale())
             : nullptr,
-        C_submaps[constraint.i].rotation(),
-        C_submaps[constraint.i].translation(),
+        C_submaps[flattened_i].rotation(),
+        C_submaps[flattened_i].translation(),
         C_point_clouds[constraint.j].rotation(),
         C_point_clouds[constraint.j].translation());
   }
@@ -166,9 +187,9 @@ void OptimizationProblem::Solve(
   // Add constraints based on IMU observations of angular velocities and
   // linear acceleration.
   for (const auto& trajectory_nodes_pair : nodes_per_trajectory) {
-    const mapping::Submaps* const trajectory = trajectory_nodes_pair.first;
+    const int trajectory_id = trajectory_nodes_pair.first;
     const std::vector<size_t>& node_indices = trajectory_nodes_pair.second;
-    const std::deque<ImuData>& imu_data = imu_data_.at(trajectory);
+    const std::deque<ImuData>& imu_data = imu_data_.at(trajectory_id);
     CHECK(!node_indices.empty());
     CHECK(!imu_data.empty());
 
@@ -239,8 +260,12 @@ void OptimizationProblem::Solve(
   }
 
   // Store the result.
-  for (size_t i = 0; i != submap_transforms->size(); ++i) {
-    (*submap_transforms)[i] = C_submaps[i].ToRigid();
+  int index = 0;
+  for (auto& submap_transforms_pair : *per_trajectory_submap_transforms) {
+    for (auto& transform : submap_transforms_pair.second) {
+      transform = C_submaps[index].ToRigid();
+      ++index;
+    }
   }
   for (size_t j = 0; j != node_data_.size(); ++j) {
     node_data_[j].point_cloud_pose = C_point_clouds[j].ToRigid();

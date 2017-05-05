@@ -77,7 +77,7 @@ ConstraintBuilder::~ConstraintBuilder() {
 }
 
 void ConstraintBuilder::MaybeAddConstraint(
-    const int submap_index, const Submap* const submap, const int scan_index,
+    const mapping::PerTrajectoryIndex& submap_index, const Submap* const submap, const int scan_index,
     const std::vector<mapping::TrajectoryNode>& trajectory_nodes,
     const transform::Rigid3d& initial_relative_pose) {
   if (initial_relative_pose.translation().norm() >
@@ -110,8 +110,8 @@ void ConstraintBuilder::MaybeAddConstraint(
 }
 
 void ConstraintBuilder::MaybeAddGlobalConstraint(
-    const int submap_index, const Submap* const submap, const int scan_index,
-    const mapping::Submaps* scan_trajectory,
+    const mapping::PerTrajectoryIndex& submap_index, const Submap* const submap,
+    const int scan_index, const mapping::Submaps* scan_trajectory,
     const mapping::Submaps* submap_trajectory,
     mapping::TrajectoryConnectivity* trajectory_connectivity,
     const std::vector<mapping::TrajectoryNode>& trajectory_nodes) {
@@ -155,7 +155,7 @@ void ConstraintBuilder::WhenDone(
 }
 
 void ConstraintBuilder::ScheduleSubmapScanMatcherConstructionAndQueueWorkItem(
-    const int submap_index,
+    const mapping::PerTrajectoryIndex& submap_index,
     const std::vector<mapping::TrajectoryNode>& submap_nodes,
     const HybridGrid* const submap, const std::function<void()> work_item) {
   if (submap_scan_matchers_[submap_index].fast_correlative_scan_matcher !=
@@ -172,7 +172,7 @@ void ConstraintBuilder::ScheduleSubmapScanMatcherConstructionAndQueueWorkItem(
 }
 
 void ConstraintBuilder::ConstructSubmapScanMatcher(
-    const int submap_index,
+    const mapping::PerTrajectoryIndex& submap_index,
     const std::vector<mapping::TrajectoryNode>& submap_nodes,
     const HybridGrid* const submap) {
   auto submap_scan_matcher =
@@ -190,7 +190,7 @@ void ConstraintBuilder::ConstructSubmapScanMatcher(
 }
 
 const ConstraintBuilder::SubmapScanMatcher*
-ConstraintBuilder::GetSubmapScanMatcher(const int submap_index) {
+ConstraintBuilder::GetSubmapScanMatcher(const mapping::PerTrajectoryIndex& submap_index) {
   common::MutexLocker locker(&mutex_);
   const SubmapScanMatcher* submap_scan_matcher =
       &submap_scan_matchers_[submap_index];
@@ -199,7 +199,8 @@ ConstraintBuilder::GetSubmapScanMatcher(const int submap_index) {
 }
 
 void ConstraintBuilder::ComputeConstraint(
-    const int submap_index, const Submap* const submap, const int scan_index,
+    const mapping::PerTrajectoryIndex& submap_index, const Submap* const submap,
+    const int scan_index,
     const mapping::Submaps* scan_trajectory,
     const mapping::Submaps* submap_trajectory, bool match_full_submap,
     mapping::TrajectoryConnectivity* trajectory_connectivity,
@@ -259,6 +260,7 @@ void ConstraintBuilder::ComputeConstraint(
       submap->local_pose().inverse() * pose_estimate;
   constraint->reset(new OptimizationProblem::Constraint{
       submap_index,
+      -1,
       scan_index,
       {constraint_transform,
        1. / std::sqrt(options_.lower_covariance_eigenvalue_bound()) *
