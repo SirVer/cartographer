@@ -161,7 +161,7 @@ class SparsePoseGraph : public mapping::SparsePoseGraph {
   // Adds extrapolated transforms, so that there are transforms for all submaps.
   std::vector<transform::Rigid3d> ExtrapolateSubmapTransforms(
       const std::map<int, std::vector<transform::Rigid3d>>& submap_transforms,
-      const mapping::Submaps& submaps) const REQUIRES(mutex_);
+      const mapping::Submaps& submaps) REQUIRES(mutex_);
 
   // NOCOM(#hrapp): what
   int GetTrajectoryId(const mapping::Submaps* submaps) REQUIRES(mutex_);
@@ -182,7 +182,8 @@ class SparsePoseGraph : public mapping::SparsePoseGraph {
                      std::unique_ptr<common::FixedRatioSampler>>
       global_localization_samplers_ GUARDED_BY(mutex_);
 
-  // NOCOM(#hrapp): what
+  // NOCOM(#hrapp): This is silly and should be removable by passing in
+  // external trajectory_id's.
   std::unordered_map<const mapping::Submaps*, int>
       trajectory_to_ids_ GUARDED_BY(mutex_);
   std::unordered_map<int, int>
@@ -199,7 +200,7 @@ class SparsePoseGraph : public mapping::SparsePoseGraph {
   sparse_pose_graph::ConstraintBuilder constraint_builder_ GUARDED_BY(mutex_);
   std::vector<Constraint> constraints_;
   std::map<int, std::vector<transform::Rigid3d>>
-      submap_transforms_;  // (map <- submap)
+      submap_transforms_;  // trajectory_id -> (map <- submap)
 
   // Submaps get assigned an index and state as soon as they are seen, even
   // before they take part in the background computations.
@@ -209,7 +210,9 @@ class SparsePoseGraph : public mapping::SparsePoseGraph {
       GUARDED_BY(mutex_);
 
   // Connectivity structure of our trajectories.
+  // NOCOM(#hrapp): change to use trajectory id?
   std::vector<std::vector<const mapping::Submaps*>> connected_components_;
+  // NOCOM(#hrapp): same here?
   // Trajectory to connected component ID.
   std::map<const mapping::Submaps*, size_t> reverse_connected_components_;
 
