@@ -52,7 +52,7 @@ void GroupTrajectoryNodes(
     std::vector<std::vector<TrajectoryNode>>* grouped_nodes,
     std::vector<std::pair<int, int>>* new_indices);
 
-// NOCOM(#hrapp): what
+// NOCOM(#hrapp): document and rename
 struct PerTrajectoryIndex {
   int trajectory_id;
   int index;
